@@ -30,6 +30,16 @@ The **Finance Management System** is a Python application for managing personal 
 
 13. **Generate Reports:** The system generates monthly summary reports, showing total income, total expenses, and total investments for each month and year.
 
+## Admin Module
+
+The Finance Management System includes an admin module that allows administrators to perform the following tasks:
+
+- **User Management:** Administrators can view, create, update, and delete user accounts.
+
+- **Data Management:** Administrators can access and manage financial data records for all users.
+
+- **System Configuration:** Administrators can configure system settings and parameters.
+
 ## Technologies Used
 
 - **Python:** The core programming language used for application development.
@@ -61,6 +71,43 @@ The **Finance Management System** is a Python application for managing personal 
 7. Financial data can be exported to CSV files or imported from CSV files.
 
 8. Monthly summary reports can be generated to provide an overview of financial data.
+
+## Database Structure
+
+Below are the SQL commands to create the necessary tables for the Finance Management System:
+
+```sql
+-- Create the Users table to store user information
+CREATE TABLE Users (
+    UserID INT AUTO_INCREMENT PRIMARY KEY,
+    Username VARCHAR(255) NOT NULL,
+    Password VARCHAR(255) NOT NULL
+);
+
+-- Create the FinancialData table to store user financial records
+CREATE TABLE FinancialData (
+    RecordID INT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT,
+    Month INT NOT NULL,
+    Year INT NOT NULL,
+    Income DECIMAL(10, 2),
+    Expenses DECIMAL(10, 2),
+    MonthlyBudget DECIMAL(10, 2),
+    FOREIGN KEY (UserID) REFERENCES Users(UserID)
+);
+
+-- Create the Investments table to store user investments
+CREATE TABLE Investments (
+    InvestmentID INT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT,
+    InvestmentName VARCHAR(255) NOT NULL,
+    Amount DECIMAL(10, 2),
+    InvestmentDate DATE,
+    Description TEXT,
+    FOREIGN KEY (UserID) REFERENCES Users(UserID)
+);
+```
+These SQL commands define the structure of the database tables needed to store user information, financial records, and investments for the Finance Management System.
 
 ## About
 
