@@ -7,6 +7,10 @@ from decimal import Decimal
 import csv
 from multiprocessing import Pool
 
+
+INITIAL_ADMIN_USERNAME = "admin"
+INITIAL_ADMIN_PASSWORD = "admin"
+
 db_pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="finance_pool",
     pool_size=5,
@@ -19,32 +23,31 @@ db_pool = mysql.connector.pooling.MySQLConnectionPool(
 def get_db_connection():
     return db_pool.get_connection()
 
-def register(username, password):
-    query = "SELECT * FROM users WHERE username = %s"
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(query, (username,))
-        if cursor.fetchone():
-            print("Username already exists.") 
-        else:
-            hashed_password = hashlib.sha256(password.encode()).hexdigest()
-            insert_query = "INSERT INTO users (username, password_hash) VALUES (%s, %s)"
-            cursor.execute(insert_query, (username, hashed_password))
-            conn.commit()
-            print("Registration successful.")
-            auth()
-
 def login(username, password):
-    query = "SELECT id, password_hash FROM users WHERE username = %s"
+    query = "SELECT id, password_hash, is_admin, approved FROM users WHERE username = %s"
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, (username,))
         result = cursor.fetchone()
-        if result and result[1] == hashlib.sha256(password.encode()).hexdigest():
-            print("Login successful.")
-            main(result[0])
+        if result:
+            user_id, password_hash, is_admin, approved = result
+            if password_hash == hashlib.sha256(password.encode()).hexdigest():
+                if is_admin:
+                    print("Admin login successful.")
+                    if approved:
+                        admin_menu(user_id)
+                    else:
+                        print("Admin approval required. Please try again later.")
+                else:
+                    if approved:
+                        print("User login successful.")
+                        main(user_id)
+                    else:
+                        print("Admin approval required. Please try again later.")
+            else:
+                print("Invalid credentials.")
         else:
-            print("Invalid credentials.")
+            print("User not found.")
 
 def main(user_id):
     performed_predictive_analysis = False
@@ -110,50 +113,338 @@ def main(user_id):
         else:
             print("Invalid choice. Please choose again.")
 
-def auth(): 
-    print("1. Register")
-    print("2. Login")
+def auth():
+    while True:
+        print("1. Register")
+        print("2. Login")
 
-    choice = input("Enter your choice: ")
+        choice = input("Enter your choice: ")
 
-    if choice == '1':
-        username = input("Enter username: ")
-        password = input("Enter password: ")
-        register(username, password)
-    elif choice == '2':
-        username = input("Enter username: ")
-        password = input("Enter password: ")
-        login(username, password)
-    else:
-        print("Invalid choice. Please choose again.")
+        if choice == '1':
+            username = input("Enter username: ")
+            password = input("Enter password: ")
+            register(username, password)
+        elif choice == '2':
+            username = input("Enter username: ")
+            password = input("Enter password: ")
+            user_id = login(username, password)
+            if user_id:
+                if user_id == "admin":
+                    admin_menu(user_id)
+                else:
+                    main(user_id)
+        else:
+            print("Invalid choice. Please choose again.")
 
-def input_data(user_id):
-    year = int(input("Enter the year: "))
-    query = "SELECT MAX(month) FROM financial_data WHERE user_id = %s AND year = %s"
+def assign_initial_admin():
+    query = "SELECT id FROM users WHERE username = %s"
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(query, (user_id, year))
-        latest_month = cursor.fetchone()[0]
+        cursor.execute(query, (INITIAL_ADMIN_USERNAME,))
+        result = cursor.fetchone()
+        if not result:
+            # Admin user doesn't exist, so create it
+            register(INITIAL_ADMIN_USERNAME, INITIAL_ADMIN_PASSWORD, is_admin=True)
+        else:
+            print("Initial admin user already exists.")
 
-    if latest_month is None:
-        latest_month = 0 
+def change_admin_password(admin_id):
+    new_password = input("Enter the new admin password: ")
+    hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
+    
+    update_query = "UPDATE users SET password_hash = %s WHERE id = %s"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(update_query, (hashed_password, admin_id))
+        conn.commit()
+        print("Admin password updated successfully.")
 
-    data_list = []
-    for month in range(latest_month + 1, 13): 
-        print(f"Enter financial data for Month {month}")
-        try:
-            income = float(input("Enter your Income: "))
-            expense = float(input("Enter your expense: "))
-            investment = float(input("Enter your Investments: "))
-        except ValueError:
-            print("Invalid input. Please enter a valid numeric value.")
-            continue
+def generate_new_admin():
+    username = input("Enter the new admin username: ")
+    password = input("Enter the new admin password: ")
+    register(username, password, is_admin=True, approved=True)  
+    print("New admin user created.")
+
+def admin_menu(admin_id):
+    global current_admin_id
+    current_admin_id = admin_id
+
+    while True:
+        print("Admin Menu:")
+        print("1. Change Admin Password")
+        print("2. Generate New Admin User")
+        print("3. User Approvals")
+        print("4. View All User Records")
+        print("5. Delete User")
+        print("6. Logout")
+
+        choice = input("Enter your choice: ")
+
+        if choice == '1':
+            change_admin_password(admin_id)
+        elif choice == '2':
+            generate_new_admin()
+        elif choice == '3':
+            view_user_approvals(admin_id)
+        elif choice == '4':
+            view_all_records(admin_id)
+        elif choice == '5':
+            if current_admin_id:
+                view_and_delete_users(current_admin_id)  # Pass the current admin's ID
+            else:
+                print("No admin user is logged in. Please log in as an admin.")
+        elif choice == '6':
+            print("Logging out as admin.")
+            current_admin_id = None  # Clear the current admin user ID
+            auth()
+            break
+        else:
+            print("Invalid choice. Please choose again.")
+
+def view_and_delete_users(admin_id):
+    query = "SELECT id, username FROM users WHERE is_admin = 0"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query)
+        all_users = cursor.fetchall()
+
+    if all_users:
+        print("All User Records:")
+        for user in all_users:
+            user_id, username = user
+            print(f"User ID: {user_id}, Username: {username}")
+
+        while True:
+            user_id_to_delete = input("Enter the User ID you want to delete (0 to cancel): ")
+            if user_id_to_delete == '0':
+                print("User deletion canceled.")
+                break
+            user_id_to_delete = int(user_id_to_delete)
+
+            if user_id_to_delete in [user[0] for user in all_users]:
+                delete_user(admin_id, user_id_to_delete)
+                print(f"User with ID {user_id_to_delete} has been deleted.")
+            else:
+                print("Invalid User ID. Please enter a valid User ID.")
+    else:
+        print("No regular user records available.")
+
+
+def get_admin_password(admin_id):
+    query = "SELECT password_hash FROM users WHERE id = %s"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (admin_id,))
+        result = cursor.fetchone()
+        if result:
+            return result[0]
+        else:
+            return None
+
+def view_user_approvals():
+    query = "SELECT id, username FROM users WHERE approved = 0"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query)
+        user_approvals = cursor.fetchall()
+
+    if user_approvals:
+        print("User Approvals:")
+        for user in user_approvals:
+            user_id, username = user
+            print(f"User ID: {user_id}, Username: {username}")
         
-        data = (user_id, year, month, income, expense, investment)
-        data_list.append(data)
+        admin_approve_id = int(input("Enter the User ID you want to approve (0 to cancel): "))
+        
+        if admin_approve_id == 0:
+            print("User approvals canceled.")
+            admin_menu()
+        else:
+            approve_user(admin_approve_id)
+    else:
+        print("No user approval requests available.")
 
-    batch_insert_financial_data(user_id, data_list)
-    print("Financial data added successfully.")
+def approve_user(user_id):
+    update_query = "UPDATE users SET approved = 1 WHERE id = %s"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(update_query, (user_id,))
+        conn.commit()
+    print(f"User with ID {user_id} has been approved.")
+
+def delete_user(admin_id, user_id_to_delete):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        delete_query = "DELETE FROM users WHERE id = %s"
+        cursor.execute(delete_query, (user_id_to_delete,))
+        conn.commit()
+        if cursor.rowcount > 0:
+            print(f"User with ID {user_id_to_delete} has been deleted.")
+        else:
+            print(f"User with ID {user_id_to_delete} not found.")
+        admin_menu(admin_id)
+    
+def is_admin_user(user_id):
+    query = "SELECT is_admin FROM users WHERE id = %s"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        if result:
+            return result[0] == 1  # 1 represents an admin user
+        else:
+            return False
+
+def view_all_records(admin_id):
+    query = "SELECT id, username, is_admin FROM users WHERE is_admin = 0"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query)
+        all_users = cursor.fetchall()
+
+    if all_users:
+        print("All User Records:")
+        for user in all_users:
+            user_id, username, is_admin = user
+            print(f"User ID: {user_id}, Username: {username}")
+
+        user_id = input("Enter the User ID of the user whose data you want to access: ")
+        user_id = int(user_id)  # Convert to integer
+
+        # Check if the selected user is not an admin
+        if user_id in [user[0] for user in all_users]:
+            user_data = get_user_data(user_id)
+            
+            if user_data:
+                print("\nUser Financial Data:")
+                for data in user_data:
+                    year, month, income, expense, investment = data
+                    print(f"Year: {year}, Month: {month}, Income: {income}, Expense: {expense}, Investment: {investment}")
+            else:
+                print("No financial data available for this user.")
+        else:
+            print("Invalid User ID. The selected user is not a regular user.")
+    else:
+        print("No regular user records available.")
+
+
+    if all_users:
+        print("All Records:")
+        for user in all_users:
+            user_id, username, is_admin = user
+            admin_status = "Yes" if is_admin else "No"
+            print(f"User ID: {user_id}, Username: {username}, Admin: {admin_status}")
+
+        user_id = input("Enter the User ID of the user whose data you want to access: ")
+        user_id = int(user_id)  # Convert to integer
+        user_data = get_user_data(user_id)
+
+        if user_data:
+            print("\nUser Financial Data:")
+            for data in user_data:
+                year, month, income, expense, investment = data
+                print(f"Year: {year}, Month: {month}, Income: {income}, Expense: {expense}, Investment: {investment}")
+        else:
+            print("No financial data available for this user.")
+    else:
+        print("No records available.")
+
+def get_user_data(user_id):
+    query = "SELECT year, month, income, expense, monthly_investment FROM financial_data WHERE user_id = %s"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (user_id,))
+        financial_data = cursor.fetchall()
+    return financial_data
+
+def register(username, password, is_admin=False, approved=False):
+    query = "SELECT * FROM users WHERE username = %s"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, (username,))
+        if cursor.fetchone():
+            print("Username already exists.")
+        else:
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
+            insert_query = "INSERT INTO users (username, password_hash, is_admin, approved) VALUES (%s, %s, %s, %s)"
+            cursor.execute(insert_query, (username, hashed_password, is_admin, approved))
+            conn.commit()
+            if is_admin:
+                print("Admin registration successful.")
+            else:
+                print("User registration successful.")
+                if not approved:
+                    print("Admin approval required. Please try again later.")
+
+def admin_approve_users():
+    admin_password = input("Enter the admin password to approve users: ")
+
+    if admin_password == "root":
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT id, username FROM users WHERE approved = 0"
+            cursor.execute(query)
+            users_to_approve = cursor.fetchall()
+
+            if users_to_approve:
+                print("Users pending approval:")
+                for user in users_to_approve:
+                    user_id, username = user
+                    print(f"User ID: {user_id}, Username: {username}")
+
+                user_id_to_approve = input("Enter the User ID to approve (or 'q' to quit): ")
+                if user_id_to_approve == 'q':
+                    return
+
+                user_id_to_approve = int(user_id_to_approve)
+                if user_id_to_approve in [user[0] for user in users_to_approve]:
+                    update_query = "UPDATE users SET approved = 1 WHERE id = %s"
+                    cursor.execute(update_query, (user_id_to_approve,))
+                    conn.commit()
+                    print(f"User with ID {user_id_to_approve} has been approved.")
+                else:
+                    print("Invalid User ID.")
+            else:
+                print("No users pending approval.")
+    else:
+        print("Invalid admin password. Approval process canceled.")
+
+def input_data(user_id):
+    while True:
+        year = int(input("Enter the year: "))
+        query = "SELECT MAX(month) FROM financial_data WHERE user_id = %s AND year = %s"
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (user_id, year))
+            latest_month = cursor.fetchone()[0]
+
+        if latest_month is None:
+            latest_month = 0
+
+        data_list = []
+        for month in range(latest_month + 1, 13):
+            print(f"Enter financial data for Month {month}")
+            try:
+                income = float(input("Enter your Income: "))
+                expense = float(input("Enter your expense: "))
+                investment = float(input("Enter your Investments: "))
+            except ValueError:
+                print("Invalid input. Please enter a valid numeric value.")
+                continue
+
+            data = (user_id, year, month, income, expense, investment)
+            data_list.append(data)
+
+            more_data = input("Do you want to enter data for another month (y/n): ")
+            if more_data.lower() != 'y':
+                break
+
+        batch_insert_financial_data(user_id, data_list)
+        print("Financial data for year", year, "added successfully.")
+
+        more_years = input("Do you want to enter data for another year (y/n): ")
+        if more_years.lower() != 'y':
+            break
 
 def update_data(user_id):
     year = int(input("Enter the year for which you want to update data: "))
@@ -186,6 +477,28 @@ def delete_data(user_id):
         conn.commit()
     print(f"Financial data for Month {month}, Year {year} deleted successfully.")
 
+def view_user_approvals(admin_id):
+    query = "SELECT id, username FROM users WHERE approved = 0"
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query)
+        user_approvals = cursor.fetchall()
+
+    if user_approvals:
+        print("User Approvals:")
+        for user in user_approvals:
+            user_id, username = user
+            print(f"User ID: {user_id}, Username: {username}")
+        
+        admin_approve_id = int(input("Enter the User ID you want to approve (0 to cancel): "))
+        
+        if admin_approve_id == 0:
+            print("User approvals canceled.")
+            admin_menu(admin_id)  # Pass the admin_id as an argument here
+        else:
+            approve_user(admin_approve_id)
+    else:
+        print("No user approval requests available.")
 def view_financial_data(user_id):
     query = "SELECT income, expense, monthly_investment FROM financial_data WHERE user_id = %s"
     with get_db_connection() as conn:
@@ -201,31 +514,43 @@ def view_financial_data(user_id):
     else:
         print("No financial data available.")
 
+
 def visualize_financial_data(user_id):
-    query = "SELECT income, expense, monthly_investment FROM financial_data WHERE user_id = %s"
+    query = "SELECT year, month, income, expense, monthly_investment FROM financial_data WHERE user_id = %s"
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, (user_id,))
         financial_data = cursor.fetchall()
 
     if financial_data:
-        incomes = [data[0] for data in financial_data]
-        expenses = [data[1] for data in financial_data]
-        monthly_investment = [data[2] for data in financial_data]
+        years = [data[0] for data in financial_data]
+        months = [data[1] for data in financial_data]
+        incomes = [data[2] for data in financial_data]
+        expenses = [data[3] for data in financial_data]
+        monthly_investment = [data[4] for data in financial_data]
+
+        month_names = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
 
         plt.figure(figsize=(10, 6))
+        x_ticks = [f"{month_names[month - 1]} {year}" for year, month in zip(years, months)]
+        
         plt.bar(range(len(incomes)), incomes, color='green', label='Income')
         plt.bar(range(len(expenses)), expenses, color='red', label='Expense')
         plt.bar(range(len(monthly_investment)), monthly_investment, color='blue', label='Investment')
         
-        plt.xlabel('Financial Record')
+        plt.xlabel('Month-Year')
         plt.ylabel('Amount')
         plt.title('Financial Data Visualization')
-        plt.xticks(range(len(incomes)), [f'Record {i+1}' for i in range(len(incomes))])
+        plt.xticks(range(len(incomes)), x_ticks, rotation=45)
         plt.legend()
+        plt.tight_layout()
         plt.show()
     else:
         print("No financial data available.")
+
 
 def train_predictive_model(user_id):
     query = "SELECT expense, monthly_investment, income FROM financial_data WHERE user_id = %s"
@@ -415,11 +740,25 @@ def import_financial_data_csv(user_id):
                 data = (user_id, year, month, income, expense, investment)
                 data_list.append(data)
 
-            batch_insert_financial_data(user_id, data_list)
+            upsert_financial_data(user_id, data_list)
 
         print(f"Financial data imported from '{csv_file_name}' successfully.")
     except Exception as e:
         print(f"Error during import: {str(e)}")
+
+def upsert_financial_data(user_id, data_list):
+    insert_query = """
+    INSERT INTO financial_data (user_id, year, month, income, expense, monthly_investment)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+    income = VALUES(income),
+    expense = VALUES(expense),
+    monthly_investment = VALUES(monthly_investment)
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.executemany(insert_query, data_list)
+        conn.commit()
 
 def batch_insert_financial_data(user_id, data_list):
     insert_query = "INSERT INTO financial_data (user_id, year, month, income, expense, monthly_investment) VALUES (%s, %s, %s, %s, %s, %s)"
@@ -451,4 +790,5 @@ def generate_reports(user_id):
         print(f"Error during report generation: {str(e)}")
 
 if __name__ == "__main__":
+    assign_initial_admin()
     auth()
