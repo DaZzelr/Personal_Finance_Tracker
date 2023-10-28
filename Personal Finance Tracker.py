@@ -60,11 +60,11 @@ def main(user_id):
         print("6. Set Monthly Budget:")
         print("7. Check Alerts:")
         print("8. Investment Tracking:")
-        print("9. Analyze Financial Data:")  # New option
-        print("10. Export Financial Data to CSV:")  # New option
-        print("11. Import Financial Data from CSV:")  # New option
-        print("12. Generate Reports:")  # New option
-        print("13. Exit")
+        print("9. Analyze Financial Data:")  
+        print("10. Export Financial Data to CSV:")  
+        print("11. Import Financial Data from CSV:")  
+        print("12. Generate Reports:") 
+        print("13. Logout")
 
         choice = input("Enter your choice: ")
 
@@ -100,16 +100,16 @@ def main(user_id):
         elif choice == '8':
             track_investments(user_id)
         elif choice == '9':
-            analyze_financial_data(user_id)  # New option
+            analyze_financial_data(user_id)
         elif choice == '10':
-            export_financial_data_csv(user_id)  # New option
+            export_financial_data_csv(user_id)
         elif choice == '11':
-            import_financial_data_csv(user_id)  # New option
+            import_financial_data_csv(user_id)
         elif choice == '12':
-            generate_reports(user_id)  # New option
+            generate_reports(user_id)
         elif choice == '13':
             print("Exiting.")
-            break
+            auth()
         else:
             print("Invalid choice. Please choose again.")
 
@@ -143,7 +143,7 @@ def assign_initial_admin():
         cursor.execute(query, (INITIAL_ADMIN_USERNAME,))
         result = cursor.fetchone()
         if not result:
-            # Admin user doesn't exist, so create it
+
             register(INITIAL_ADMIN_USERNAME, INITIAL_ADMIN_PASSWORD, is_admin=True)
         else:
             print("Initial admin user already exists.")
@@ -190,12 +190,12 @@ def admin_menu(admin_id):
             view_all_records(admin_id)
         elif choice == '5':
             if current_admin_id:
-                view_and_delete_users(current_admin_id)  # Pass the current admin's ID
+                view_and_delete_users(current_admin_id) 
             else:
                 print("No admin user is logged in. Please log in as an admin.")
         elif choice == '6':
             print("Logging out as admin.")
-            current_admin_id = None  # Clear the current admin user ID
+            current_admin_id = None 
             auth()
             break
         else:
@@ -494,7 +494,7 @@ def view_user_approvals(admin_id):
         
         if admin_approve_id == 0:
             print("User approvals canceled.")
-            admin_menu(admin_id)  # Pass the admin_id as an argument here
+            admin_menu(admin_id) 
         else:
             approve_user(admin_approve_id)
     else:
@@ -627,17 +627,24 @@ def check_alerts(user_id):
         print("No financial data available.")
 
 def track_investments(user_id):
-    print("Investment Tracking:")
-    print("1. Add Investment")
-    print("2. View Investments")
-    choice = input("Enter your choice: ")
+    while True:
+        print("Investment Tracking:")
+        print("1. Add Investment")
+        print("2. View Investments")
+        print("3. Return To Main Menu")
+        choice = input("Enter your choice: ")
 
-    if choice == '1':
-        add_investment(user_id)
-    elif choice == '2':
-        view_investments(user_id)
-    else:
-        print("Invalid choice.")
+        if choice == '1':
+            add_investment(user_id)
+            track_investments(user_id)
+        elif choice == '2':
+            view_investments(user_id)
+            track_investments(user_id)
+        elif choice == '3':
+            main(user_id)
+        else:
+            print("Invalid choice.")
+            track_investments(user_id)
 
 def add_investment(user_id):
     investment_name = input("Enter investment name: ")
