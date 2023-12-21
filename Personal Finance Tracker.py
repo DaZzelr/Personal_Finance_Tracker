@@ -1,11 +1,11 @@
-import mysql.connector
-import hashlib
-import matplotlib.pyplot as plt
-import numpy as np
-from sklearn.linear_model import LinearRegression
-from decimal import Decimal
-import csv
-from multiprocessing import Pool
+import mysql.connector # Facilitates MySQL database connectivity and interaction.
+import hashlib # Provides secure hash functions for data integrity and password storage.
+import matplotlib.pyplot as plt # Enables data visualization through plotting using Matplotlib.
+import numpy as np # Supports numerical operations with powerful array and matrix functionality.
+from sklearn.linear_model import LinearRegression # Implements tools for linear modeling, including linear regression.
+from decimal import Decimal # Supports precise decimal floating-point arithmetic.
+import csv # Handles reading and writing CSV files for tabular data.
+from multiprocessing import Pool # Facilitates parallel processing using a pool of worker processes.
 
 
 INITIAL_ADMIN_USERNAME = "admin"
@@ -23,21 +23,20 @@ db_pool = mysql.connector.pooling.MySQLConnectionPool(
 def get_db_connection():
     return db_pool.get_connection()
 
+
 def login(username, password):
     query = "SELECT id, password_hash, is_admin, approved FROM users WHERE username = %s"
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, (username,))
         result = cursor.fetchone()
+
         if result:
             user_id, password_hash, is_admin, approved = result
             if password_hash == hashlib.sha256(password.encode()).hexdigest():
                 if is_admin:
                     print("Admin login successful.")
-                    if approved:
-                        admin_menu(user_id)
-                    else:
-                        print("Admin approval required. Please try again later.")
+                    admin_menu(user_id)
                 else:
                     if approved:
                         print("User login successful.")
@@ -50,7 +49,6 @@ def login(username, password):
             print("User not found.")
 
 def main(user_id):
-    performed_predictive_analysis = False
     while True:
         print("1. Enter Information:")
         print("2. View Information:")
@@ -77,18 +75,14 @@ def main(user_id):
             if choice1 == 'y':
                 visualize_financial_data(user_id)
         elif choice == '3':
-            if not performed_predictive_analysis:
-                performed_predictive_analysis = True
-                model = train_predictive_model(user_id)
-                if model:
-                    future_expense = float(input("Enter a future expense: "))
-                    future_investment = float(input("Enter a future investment: "))
-                    predicted_income = predict_future_income(model, future_expense, future_investment)
-                    print(f"Predicted future income: {predicted_income}")
-                else:
-                    print("Insufficient data to train the predictive model.")
+            model = train_predictive_model(user_id)
+            if model:
+                future_expense = float(input("Enter a future expense: "))
+                future_investment = float(input("Enter a future investment: "))
+                predicted_income = predict_future_income(model, future_expense, future_investment)
+                print(f"Predicted future income: {predicted_income}")
             else:
-                print("Predictive analysis already performed.")
+                print("Insufficient data to train the predictive model.")
         elif choice == '4':
             update_data(user_id)
         elif choice == '5':
@@ -138,13 +132,18 @@ def auth():
 
 def assign_initial_admin():
     query = "SELECT id FROM users WHERE username = %s"
+    
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, (INITIAL_ADMIN_USERNAME,))
         result = cursor.fetchone()
+        
         if not result:
-
-            register(INITIAL_ADMIN_USERNAME, INITIAL_ADMIN_PASSWORD, is_admin=True)
+            hashed_password = hashlib.sha256(INITIAL_ADMIN_PASSWORD.encode()).hexdigest()
+            insert_query = "INSERT INTO users (username, password_hash, is_admin, approved) VALUES (%s, %s, %s, %s)"
+            cursor.execute(insert_query, (INITIAL_ADMIN_USERNAME, hashed_password, 1, 1))  # Setting is_admin and approved to 1
+            conn.commit()
+            print("Initial admin user created successfully.")
         else:
             print("Initial admin user already exists.")
 
